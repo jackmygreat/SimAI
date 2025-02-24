@@ -789,9 +789,9 @@ void Workload::iterate_hybrid_parallel_Transformer_fwd_in_bckwd() {
   assert(index < SIZE);
   check_for_sim_end();
   if (current_state == LoopState::Forward_Pass) {
-    if (!layers[index]->is_weight_grad_comm_finished_blocking()) {
-      return;
-    }
+    // if (!layers[index]->is_weight_grad_comm_finished_blocking()) {
+    //   return;
+    // }
     if (delay_loaded == false) {
       counter = layers[index]->get_fwd_pass_compute();
       delay_loaded = true;
@@ -810,13 +810,170 @@ void Workload::iterate_hybrid_parallel_Transformer_fwd_in_bckwd() {
     index++;
     delay_loaded = false;
     collective_issued = false;
-    if (index >= SIZE) {
-      current_state = LoopState::Input_Gradient;
-      index--;
-    }
-    NcclLog->writeLog(NcclLogLevel::DEBUG,"workload::call fwd_pass register_event EventType::General ");
-    generator->register_event(this, EventType::General, NULL, 1);
-    return;
+
+
+
+
+        if (index >= SIZE)
+      {
+        // current_state = LoopState::Input_Gradient;
+        // index--;
+
+        if (generator->id == 0)
+        {
+          std::cout << "pass: " << pass_counter
+                    << " finished at time: " << Sys::boostedTick() << std::endl;
+        }
+
+        std::map<int, int> pprank2group = generator->mock_nccl_comms[DP]->GlobalGroup->PPrank2group;
+        std::vector<int> ranks = generator->mock_nccl_comms[DP]->GlobalGroup->PPGroups[pprank2group[generator->id]].Ranks;
+        Actionphase actionphase = GlobalPPscheduler::getInstance().getactionsby_nodeid(generator->id, int(LoopState::Forward_Pass), ranks);
+
+        if (actionphase.m_mode < 0)
+        {
+          printf("workload::iterate_hybrid_parallel_Transformer_fwd_in_bckwd actionphase.m_next_commu_node_id == -1\n");
+          return;
+        }
+
+        switch (actionphase.m_mode)
+        {
+        case 0:
+          current_state = LoopState(actionphase.m_next_state);
+          if (current_state == LoopState::Forward_Pass)
+          {
+            index = 0;
+          }
+          else
+          {
+            index--;
+          }
+          generator->register_event(this, EventType::General, NULL, 1);
+
+          // index = 0;
+          return;
+        case 1:
+          current_state = LoopState(actionphase.m_next_state);
+          if (current_state == LoopState::Forward_Pass)
+          {
+            index = 0;
+          }
+          else
+          {
+            index--;
+          }
+          this->generator->has_fired = false;
+          break;
+        case 3:
+          current_state = LoopState(actionphase.m_next_state);
+          if (current_state == LoopState::Forward_Pass)
+          {
+            index = 0;
+          }
+          else
+          {
+            index--;
+          }
+          this->generator->has_fired = false;
+          if (pp_task!=0)
+          {
+            fire();
+            pp_task--;
+          }
+          return;
+          case 4:
+          current_state = LoopState(actionphase.m_next_state);
+          if (current_state == LoopState::Forward_Pass)
+          {
+            index = 0;
+          }
+          else
+          {
+            index--;
+          }
+          break;
+        default:
+          break;
+        }
+
+        sim_request snd_req;
+        snd_req.srcRank = generator->id;
+        snd_req.dstRank = actionphase.m_next_commu_node_id;
+        snd_req.tag = 1;
+        snd_req.reqType = UINT8;
+        snd_req.vnet = 1;
+        snd_req.layerNum = index;
+        snd_req.reqCount = 100000;
+
+        snd_req.flowTag.channel_id = 100000;
+        snd_req.flowTag.flow_size = 100000;
+        snd_req.flowTag.current_flow_id = 100000 + generator->id;
+        snd_req.flowTag.chunk_id = 100000;
+        snd_req.flowTag.child_flow_id = -2;
+        snd_req.flowTag.sender_node = generator->id;
+        snd_req.flowTag.receiver_node = actionphase.m_next_commu_node_id;
+        snd_req.flowTag.pQps = nullptr;
+        snd_req.flowTag.nvls_on = false;
+        snd_req.flowTag.tag_id = 100000;
+        snd_req.flowTag.comm_type= comm_type_e::PP_COMM;
+
+        BasicEventHandlerData *send_ehd = new BasicEventHandlerData(generator, EventType::Forward_PP_Send);
+        generator->NI->sim_send(
+            0,
+            100000,
+            UINT8,
+            actionphase.m_next_commu_node_id,
+            100000,
+            &snd_req,
+            &Sys::handleEvent,
+            send_ehd);
+
+        sim_request rcv_req;
+        rcv_req.vnet = 1;
+        rcv_req.layerNum = index;
+        rcv_req.reqCount = 100000;
+        rcv_req.tag = 100000;
+
+        rcv_req.flowTag.channel_id = 100000;
+        rcv_req.flowTag.flow_size = 100000;
+        rcv_req.flowTag.current_flow_id = 100000 + generator->id;
+        rcv_req.flowTag.chunk_id = 100000;
+        rcv_req.flowTag.child_flow_id = -2;
+        rcv_req.flowTag.sender_node = generator->id;
+        rcv_req.flowTag.receiver_node = actionphase.m_next_commu_node_id;
+        rcv_req.flowTag.pQps = nullptr;
+        rcv_req.flowTag.nvls_on = false;
+        rcv_req.flowTag.tag_id = 100000;
+        // rcv_req.flowTag.data_type = true;
+
+        RecvPacketEventHadndlerData *rec_ehd = new RecvPacketEventHadndlerData(generator->m_systems[actionphase.m_next_commu_node_id], EventType::Forward_PP_Recv, rcv_req.flowTag);
+        generator->m_systems[actionphase.m_next_commu_node_id]->NI->sim_recv(
+            0,
+            100000,
+            UINT8,
+            generator->id,
+            100000,
+            &rcv_req,
+            &Sys::handleEvent,
+            rec_ehd);
+
+        if (pp_task!=0)
+        {
+          fire();
+          pp_task--;
+          return;
+        }
+
+        if (actionphase.m_mode==4)
+        {
+          generator->register_event(this, EventType::General, NULL, 1);
+          return;
+        }        
+        return;
+      }else{
+        NcclLog->writeLog(NcclLogLevel::DEBUG, "workload::call fwd_pass register_event EventType::General ");
+        generator->register_event(this, EventType::General, NULL, 1);
+        return;
+      }
   } else if (current_state == LoopState::Weight_Gradient) {
     if (delay_loaded == false) {
       counter = layers[index]->get_weight_grad_compute();
@@ -840,19 +997,225 @@ void Workload::iterate_hybrid_parallel_Transformer_fwd_in_bckwd() {
     if (index >= 0) {
       index--;
     }
-    if (index == -1) {
-      index = 0;
-      if (generator->id == 0) {
-        std::cout << "pass: " << pass_counter
-                  << " finished at time: " << Sys::boostedTick() << std::endl;
+    int compare_index=-1;
+      if(generator->id <= 31){
+       compare_index=-1;
+      }else{
+        compare_index=2;
       }
-      pass_counter++;
-      current_state = LoopState::Forward_Pass;
-    } else {
-      current_state = LoopState::Input_Gradient;
-    }
-    generator->register_event(this, EventType::General, NULL, 1);
-    return;
+      if (index == compare_index)
+      {
+        index = 0;
+        if (generator->id == 127)
+        {
+          std::cout << "pass: " << pass_counter
+                    << " finished at time: " << Sys::boostedTick() << std::endl;
+        }
+        // pass_counter++;
+        // current_state = LoopState::Forward_Pass;
+
+        std::map<int, int> pprank2group = generator->mock_nccl_comms[DP]->GlobalGroup->PPrank2group;
+        std::vector<int> ranks = generator->mock_nccl_comms[DP]->GlobalGroup->PPGroups[pprank2group[generator->id]].Ranks;
+        Actionphase actionphase = GlobalPPscheduler::getInstance().getactionsby_nodeid(generator->id, int(LoopState::Weight_Gradient), ranks);
+
+        if (actionphase.m_mode < 0)
+        {
+          printf("workload::iterate_hybrid_parallel_Transformer_fwd_in_bckwd actionphase.m_next_commu_node_id == -1\n");
+          return;
+        }
+
+        bool bi_commu = false;
+
+        switch (actionphase.m_mode)
+        {
+        case 0:
+          current_state = LoopState(actionphase.m_next_state);
+
+          if (current_state == LoopState::Forward_Pass)
+          {
+            index = 0;
+          }
+          else
+          {
+            index = SIZE - 1;
+          }
+          generator->register_event(this, EventType::General, NULL, 1);
+          return;
+        case 1:
+          current_state = LoopState(actionphase.m_next_state);
+          if (current_state == LoopState::Forward_Pass)
+          {
+            index = 0;
+          }
+          else
+          {
+            index = SIZE - 1;
+          }
+          this->generator->has_fired = false;
+          break;
+        case 2:
+          current_state = LoopState(actionphase.m_next_state);
+          if (current_state == LoopState::Forward_Pass)
+          {
+            index = 0;
+          }
+          else
+          {
+            index = SIZE - 1;
+          }
+          bi_commu = true;
+          this->generator->has_fired = false;
+          break;
+        case 3:
+          current_state = LoopState(actionphase.m_next_state);
+          index = SIZE - 1;
+          this->generator->has_fired = false;
+          if (pp_task!=0)
+          {
+            fire();
+            pp_task--;
+          }
+          return;
+        default:
+          return;
+        }
+
+
+        sim_request snd_req;
+        snd_req.srcRank = generator->id;
+        snd_req.dstRank = actionphase.m_next_commu_node_id;
+        snd_req.tag = 1;
+        snd_req.reqType = UINT8;
+        snd_req.vnet = 1;
+        snd_req.layerNum = index;
+        snd_req.reqCount = 100000;
+
+        snd_req.flowTag.channel_id = 100000;
+        snd_req.flowTag.flow_size = 100000;
+        snd_req.flowTag.current_flow_id = 100000 + generator->id;
+        snd_req.flowTag.chunk_id = 100000;
+        snd_req.flowTag.child_flow_id = -2;
+        snd_req.flowTag.sender_node = generator->id;
+        snd_req.flowTag.receiver_node = actionphase.m_next_commu_node_id;
+        snd_req.flowTag.pQps = nullptr;
+        snd_req.flowTag.nvls_on = false;
+        snd_req.flowTag.tag_id = 100000;
+        snd_req.flowTag.comm_type= comm_type_e::PP_COMM;
+
+        BasicEventHandlerData *send_ehd = new BasicEventHandlerData(generator, EventType::Forward_PP_Send);
+        generator->NI->sim_send(
+            0,
+            100000,
+            UINT8,
+            actionphase.m_next_commu_node_id,
+            100000,
+            &snd_req,
+            &Sys::handleEvent,
+            send_ehd);
+
+        sim_request rcv_req;
+        rcv_req.vnet = 1;
+        rcv_req.layerNum = index;
+        rcv_req.reqCount = 100000;
+        rcv_req.tag = 100000;
+
+        rcv_req.flowTag.channel_id = 100000;
+        rcv_req.flowTag.flow_size = 100000;
+        rcv_req.flowTag.current_flow_id = 100000 + generator->id;
+        rcv_req.flowTag.chunk_id = 100000;
+        rcv_req.flowTag.child_flow_id = -2;
+        rcv_req.flowTag.sender_node = generator->id;
+        rcv_req.flowTag.receiver_node = actionphase.m_next_commu_node_id;
+        rcv_req.flowTag.pQps = nullptr;
+        rcv_req.flowTag.nvls_on = false;
+        rcv_req.flowTag.tag_id = 100000;
+        // rcv_req.flowTag.data_type = true;
+
+        RecvPacketEventHadndlerData *rec_ehd = new RecvPacketEventHadndlerData(generator->m_systems[actionphase.m_next_commu_node_id], EventType::Forward_PP_Recv, rcv_req.flowTag);
+        generator->m_systems[actionphase.m_next_commu_node_id]->NI->sim_recv(
+            0,
+            100000,
+            UINT8,
+            generator->id,
+            100000,
+            &rcv_req,
+            &Sys::handleEvent,
+            rec_ehd);
+
+        if (bi_commu)
+        {
+          sim_request snd_req1;
+          snd_req1.srcRank = actionphase.m_next_commu_node_id;
+          snd_req1.dstRank = generator->id;
+          snd_req1.tag = 1;
+          snd_req1.reqType = UINT8;
+          snd_req1.vnet = 1;
+          snd_req1.layerNum = index;
+          snd_req1.reqCount = 100000;
+
+          snd_req1.flowTag.channel_id = 100000;
+          snd_req1.flowTag.flow_size = 100000;
+          snd_req1.flowTag.current_flow_id = 100000 + actionphase.m_next_commu_node_id;
+          snd_req1.flowTag.chunk_id = 100000;
+          snd_req1.flowTag.child_flow_id = -2;
+          snd_req1.flowTag.sender_node = actionphase.m_next_commu_node_id;
+          snd_req1.flowTag.receiver_node = generator->id;
+          snd_req1.flowTag.pQps = nullptr;
+          snd_req1.flowTag.nvls_on = false;
+          snd_req1.flowTag.tag_id = 100000;
+          snd_req1.flowTag.comm_type= comm_type_e::PP_COMM;
+
+          BasicEventHandlerData *send_ehd1 = new BasicEventHandlerData(generator->m_systems[actionphase.m_next_commu_node_id], EventType::Forward_PP_Send);
+          generator->m_systems[actionphase.m_next_commu_node_id]->NI->sim_send(
+              0,
+              100000,
+              UINT8,
+              generator->id,
+              100000,
+              &snd_req1,
+              &Sys::handleEvent,
+              send_ehd1);
+
+          sim_request rcv_req1;
+          rcv_req1.vnet = 1;
+          rcv_req1.layerNum = index;
+          rcv_req1.reqCount = 100000;
+          rcv_req1.tag = 100000;
+
+          rcv_req1.flowTag.channel_id = 100000;
+          rcv_req1.flowTag.flow_size = 100000;
+          rcv_req1.flowTag.current_flow_id = 100000 + actionphase.m_next_commu_node_id;
+          rcv_req1.flowTag.chunk_id = 100000;
+          rcv_req1.flowTag.child_flow_id = -2;
+          rcv_req1.flowTag.sender_node = actionphase.m_next_commu_node_id;
+          rcv_req1.flowTag.receiver_node = generator->id;
+          rcv_req1.flowTag.pQps = nullptr;
+          rcv_req1.flowTag.nvls_on = false;
+          rcv_req1.flowTag.tag_id = 100000;
+
+          RecvPacketEventHadndlerData *rec_ehd1 = new RecvPacketEventHadndlerData(generator, EventType::Forward_PP_Recv, rcv_req1.flowTag);
+          generator->NI->sim_recv(
+              0,
+              100000,
+              UINT8,
+              actionphase.m_next_commu_node_id,
+              100000,
+              &rcv_req1,
+              &Sys::handleEvent,
+              rec_ehd1);
+        }
+        if (pp_task!=0)
+        {
+          fire();
+          pp_task--;
+        }
+      }
+      else
+      {
+        current_state = LoopState::Input_Gradient;
+        generator->register_event(this, EventType::General, NULL, 1);
+      }
+      return;
   } else if (current_state == LoopState::Input_Gradient) {
     if (layers[index]->needs_fwd_in_bckwd_initiation && !checkpoint_initiated) {
       int tmp = index;
