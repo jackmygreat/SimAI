@@ -370,7 +370,7 @@ class ExecutionTime(BaseEntity):
         )
     def _get_block_execution_time_by_layer_id(self, layer_id: int = 0) -> float:
         
-        if self._replica_config.model_name in ['deepseek-671B', 'qwen3-moe-235B', 'qwen3-next-235B'] and self._config.backend == 'aicb':   
+        if self._replica_config.model_name in ['deepseek-671B', 'qwen3-moe-235B', 'qwen3-next-80B'] and self._config.backend == 'aicb':   
             att_time = self._get_attention_layer_execution_time_from_aicb(layer_id)
             # 根据模型类型确定使用的层类型
             # Determine layer type based on model
@@ -494,7 +494,7 @@ class ExecutionTime(BaseEntity):
     def model_time(self) -> float:
         # 对于特定模型，需要逐层计算执行时间
         # For specific models, the execution time needs to be calculated layer by layer.
-        if self._replica_config.model_name in ['deepseek-671B', 'qwen3-moe-235B', 'qwen3-next-235B'] and self._config.backend == 'aicb':
+        if self._replica_config.model_name in ['deepseek-671B', 'qwen3-moe-235B', 'qwen3-next-80B'] and self._config.backend == 'aicb':
             # 计算当前 pipeline stage 包含的 layer_id 范围
             # Calculate the range of layer_ids included in the current pipeline stage
             
