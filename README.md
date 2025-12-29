@@ -2,7 +2,7 @@
 
 ### Recent Updates
 
-- [2025/11] **SimAI 2.0 Released!** This release brings end-to-end simulation for multi-request **inference** workloads. Key features include:
+- [2025/12] **SimAI 1.5 Released!** This release brings end-to-end simulation for multi-request **inference** workloads. Key features include:
   
   - **Advanced Inference Simulation:** Model complex scenarios with Prefill/Decode separation.
   - **Modern Model Support:** Now includes DeepSeek, Qwen3Moe and Qwen3Next. See [AICB's README](./aicb/README.md) for more detailed information.
@@ -29,7 +29,7 @@
 
 | Date             | Event                                                                    | Location                | Content                                                  | Type          |
 |:----------------:|:------------------------------------------------------------------------ |:----------------------- |:-------------------------------------------------------- |:-------------:|
-| Nov 13, 2025     | SimAI 2.0                                                                | 🌐 Online               | The release of SimAI 2.0                                 | 💻 Virtual    |
+| Dec 30, 2025     | SimAI 1.5                                                                | 🌐 Online               | The release of SimAI 1.5                                 | 💻 Virtual    |
 | Jun 4, 2025      | The first workshop of the SimAI community                                | 📍 Peking University    | Three talks from community contributors                  | 🎓 On-site    |
 | May 24, 2025     | The 28th Chinasys workshop                                               | 📍 Chongqing University | An invited talk about SimAI                              | 🎓 On-site    |
 | Dec 27, 2024     | SimAI Technical Presentation                                             | 📍 Beihang University   | SimAI Technical Sharing & Discussion                     | 🎓 On-site    |
